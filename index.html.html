@@ -1,0 +1,572 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Theory 1</title>
+</head>
+<body>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500&display=swap">
+<style>
+/* Layout concept: a full-bleed overhead canvas. The instrument-style header
+   (title, stage pills, status line) sits top-left; the pause card docks at the
+   bottom (full width on phones, a 460px card bottom-left on desktop).
+   One deliberate dark look: the cyan photon wave is the only bold element. */
+:root {
+  --bg: #04060c;
+  --ink: #e8eefb;
+  --muted: #8793ad;
+  --line: #26324a;
+  --panel: rgba(10, 15, 27, 0.88);
+  --photon: #58d2ff;
+  --energy: #ffb04a;
+  --nucleus: #ffe2b0;
+  --rest: #a9c1ff;
+  --display: "Chakra Petch", "Segoe UI", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--body); overflow: hidden; }
+
+#app { position: relative; width: 100%; height: 100%; overflow: hidden; }
+#stage { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+
+/* ---- header ---- */
+#hdr { position: absolute; left: 16px; right: 16px; top: 14px; display: flex; flex-direction: column; gap: 10px; pointer-events: none; max-width: 720px; }
+#hdr h1 { margin: 0; font: 600 24px/1 var(--display); letter-spacing: 0.05em; }
+#stages { display: flex; flex-wrap: wrap; gap: 6px; list-style: none; margin: 0; padding: 0; }
+#stages li {
+  font: 500 11px/1 var(--mono); text-transform: uppercase; letter-spacing: 0.09em;
+  padding: 6px 10px; border: 1px solid var(--line); border-radius: 999px;
+  color: var(--muted); background: rgba(8, 12, 22, 0.6);
+}
+#stages li.done { color: #a9b6d3; }
+#stages li.on { color: var(--photon); border-color: var(--photon); background: rgba(88, 210, 255, 0.12); }
+#status { margin: 0; font: 400 14px/1.35 var(--body); color: var(--ink); min-height: 1.35em; }
+
+/* ---- 3D-anchored labels (positioned from JS) ---- */
+#labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.tag {
+  position: absolute; left: 0; top: 0; white-space: nowrap;
+  transform: translate(calc(var(--x, 0px) - 50%), calc(var(--y, 0px) - 50%));
+  font: 500 11px/1 var(--mono); letter-spacing: 0.06em;
+  text-shadow: 0 0 6px var(--bg), 0 0 2px var(--bg);
+}
+.tag-nuc { color: var(--nucleus); }
+.tag-e   { color: var(--rest); font-size: 13px; }
+.tag-ph  { color: var(--photon); }
+.tag-gh  { color: #6fa5bd; }
+.tag-gh.hl { color: var(--photon); }
+.tag-pt  { color: var(--muted); font-size: 10px; }
+
+/* ---- explanation card ---- */
+#card {
+  position: absolute; left: 16px; right: 16px; bottom: 14px; max-width: 460px;
+  display: flex; flex-direction: column; gap: 10px; padding: 14px 16px 16px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+}
+#card.in { animation: rise 0.28s ease-out; }
+@keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { #card.in { animation: none; } }
+@media (min-width: 720px) { #card { right: auto; width: 460px; } }
+.kicker { margin: 0; font: 500 11px/1.2 var(--mono); text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); }
+.msg { margin: 0; font: 400 16px/1.45 var(--body); max-width: 60ch; }
+.readout { display: grid; gap: 6px; padding-top: 10px; border-top: 1px dashed var(--line); }
+.rlabel { font: 500 11px/1.2 var(--mono); letter-spacing: 0.04em; color: var(--energy); }
+.bar { height: 6px; border-radius: 3px; background: #141d31; overflow: hidden; }
+.bar i { display: block; height: 100%; width: 0; background: var(--energy); }
+.rval { font: 400 12px/1.3 var(--mono); color: var(--ink); font-variant-numeric: tabular-nums; }
+.btn {
+  align-self: flex-start; min-height: 44px; padding: 0 22px; border: 0; border-radius: 6px;
+  font: 500 13px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase;
+  background: var(--photon); color: #03141c; cursor: pointer;
+}
+.btn:hover { filter: brightness(1.1); }
+.btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+</style>
+
+<div id="app">
+  <canvas id="stage" aria-label="Overhead view of an electron orbiting a nucleus while a photon crosses its orbit"></canvas>
+
+  <div id="labels" aria-hidden="true">
+    <span class="tag tag-nuc" id="lNuc">nucleus</span>
+    <span class="tag tag-e" id="lE">e⁻</span>
+    <span class="tag tag-ph" id="lPh">photon</span>
+    <span class="tag tag-gh" id="lGh">ghost photon</span>
+    <span class="tag tag-pt" id="lP1">P1</span>
+    <span class="tag tag-pt" id="lP2">P2</span>
+  </div>
+
+  <header id="hdr">
+    <h1>Theory 1</h1>
+    <ol id="stages" aria-label="Stages">
+      <li>Approach</li>
+      <li>Absorbed</li>
+      <li>Revolving</li>
+      <li>Re-emitted</li>
+    </ol>
+    <p id="status" role="status"></p>
+  </header>
+
+  <section id="card" hidden>
+    <p class="kicker" id="kicker"></p>
+    <p class="msg" id="msg"></p>
+    <div class="readout" id="readout" hidden>
+      <span class="rlabel">delay (exaggerated, not to scale)</span>
+      <div class="bar"><i id="barFill"></i></div>
+      <span class="rval" id="rval"></span>
+    </div>
+    <button class="btn" id="btn" type="button">Continue</button>
+  </section>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+/* =====================================================================
+   THEORY 1: a photon absorbed by an electron at P1 and re-emitted at P2.
+
+   Everything runs on ONE simulation clock `t` that only advances while the
+   simulation is not paused:
+     - photon / ghost photon front : s = P1S + C * (t - T_A)         (speed of light)
+     - electron angle              : phi = PHI1 + DIR*OMEGA*(t - T_A) (constant speed)
+   Because both are tied to the same clock and the electron is at P1 when
+   t = T_A, the photon and electron meet at P1 at exactly the same moment.
+   The simulation pauses automatically at exactly three events:
+     T_A    absorption at P1
+     T_MID  halfway along the arc P1 -> P2
+     T_EMIT re-emission at P2
+   ===================================================================== */
+(function () {
+  'use strict';
+
+  /* ---------- DOM ---------- */
+  const $ = (id) => document.getElementById(id);
+  const app = $('app'), canvas = $('stage');
+  const statusEl = $('status'), card = $('card'), kickerEl = $('kicker'), msgEl = $('msg');
+  const readout = $('readout'), barFill = $('barFill'), rvalEl = $('rval'), btn = $('btn');
+  const stageEls = Array.from(document.querySelectorAll('#stages li'));
+  const tags = { nuc: $('lNuc'), e: $('lE'), ph: $('lPh'), gh: $('lGh'), p1: $('lP1'), p2: $('lP2') };
+
+  if (!window.THREE) { statusEl.textContent = 'Three.js could not be loaded. Check your connection and reload.'; return; }
+
+  /* ---------- Geometry and physics constants ---------- */
+  const R = 3.0;                    // orbit radius (scene units)
+  const D_OFF = 1.2;                // distance from nucleus to the secant: > 0, so the chord is not a diameter
+  const THETA = Math.PI / 6;        // direction of photon travel (30 degrees)
+  const C = 1.8;                    // speed of light, units per second
+  const V = C * 0.8;                // electron speed along the arc: slower than light
+  const OMEGA = V / R;              // constant angular speed of the electron
+  const TWO_PI = Math.PI * 2;
+
+  const UV = new THREE.Vector2(Math.cos(THETA), Math.sin(THETA));   // unit vector along the photon path
+  const NV = new THREE.Vector2(-Math.sin(THETA), Math.cos(THETA));  // unit normal to the path
+
+  const H = Math.sqrt(R * R - D_OFF * D_OFF); // half chord length
+  const P1S = -H, P2S = H;                    // path coordinates (s) of the two crossings
+  const P1 = new THREE.Vector3(NV.x * D_OFF + UV.x * P1S, NV.y * D_OFF + UV.y * P1S, 0); // entry point
+  const P2 = new THREE.Vector3(NV.x * D_OFF + UV.x * P2S, NV.y * D_OFF + UV.y * P2S, 0); // exit point
+  const PHI1 = Math.atan2(P1.y, P1.x), PHI2 = Math.atan2(P2.y, P2.x);
+
+  const mod = (a) => ((a % TWO_PI) + TWO_PI) % TWO_PI;
+  const cwArc = mod(PHI1 - PHI2), ccwArc = mod(PHI2 - PHI1);
+  const DIR = cwArc <= ccwArc ? -1 : 1;       // revolve so the electron travels the shorter arc P1 -> P2
+  const ARC = Math.min(cwArc, ccwArc);        // arc angle in radians
+
+  const T_ARC = ARC / OMEGA;                  // time for the electron to go P1 -> P2 along the arc
+  const T_CHORD = (2 * H) / C;                // time for light to go P1 -> P2 along the chord
+  const DELAY_FINAL = T_ARC - T_CHORD;        // total delay accumulated by P2
+  const T_A = 4.6 / C;                        // photon starts 4.6 units before P1
+  const T_MID = T_A + T_ARC / 2;
+  const T_EMIT = T_A + T_ARC;
+
+  const L = 2.0;                              // wave packet length
+  const K = TWO_PI / 0.5;                     // wavenumber (wavelength 0.5)
+  const AMP = 0.16;                           // wave amplitude
+  const E0 = 0.8;                             // how far the new photon has emerged at the re-emission pause
+  const END_FRONT = 9.5;                      // new photon counts as off-screen past this path coordinate
+
+  const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+  const photonFront = (t) => P1S + C * (t - T_A);          // photon and ghost photon
+  const newFront = (t) => P2S + E0 + C * (t - T_EMIT);     // new photon
+  const electronAngle = (t) => PHI1 + DIR * OMEGA * (t - T_A);
+
+  /* ---------- Renderer, camera (fixed, overhead), lights ---------- */
+  let renderer;
+  try { renderer = new THREE.WebGLRenderer({ canvas, antialias: true }); }
+  catch (err) { statusEl.textContent = 'This device could not start WebGL.'; return; }
+  renderer.setClearColor(0x04060c, 1);
+
+  const scene = new THREE.Scene();
+  const FOV = 55;
+  const camera = new THREE.PerspectiveCamera(FOV, 1, 0.1, 200);
+  let viewW = 1, viewH = 1;
+
+  // The camera never moves on its own: it sits straight above the scene looking down.
+  // Resizing only changes its height so the whole orbit fits the window.
+  function resize() {
+    viewW = Math.max(1, app.clientWidth); viewH = Math.max(1, app.clientHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setSize(viewW, viewH, false);
+    camera.aspect = viewW / viewH;
+    const half = (viewW < viewH ? 9.6 : 11.2) / 2;        // scene span kept visible on the shorter side
+    const th = Math.tan(THREE.MathUtils.degToRad(FOV / 2));
+    const dist = viewW < viewH ? half / (th * camera.aspect) : half / th;
+    camera.position.set(0, 0, dist);
+    camera.up.set(0, 1, 0);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+  }
+
+  scene.add(new THREE.AmbientLight(0xffffff, 0.35));
+  const key = new THREE.DirectionalLight(0xbcd0ff, 0.55); key.position.set(-2, 3, 6); scene.add(key);
+  const nucleusLight = new THREE.PointLight(0xffc98a, 1.5, 14, 1.5); nucleusLight.position.set(0, 0, 1.0); scene.add(nucleusLight);
+
+  /* ---------- Helpers: soft glow texture, glow sprites ---------- */
+  function makeGlowTexture() {
+    const c = document.createElement('canvas'); c.width = c.height = 128;
+    const g = c.getContext('2d');
+    const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+    gr.addColorStop(0, 'rgba(255,255,255,1)');
+    gr.addColorStop(0.25, 'rgba(255,255,255,0.55)');
+    gr.addColorStop(0.6, 'rgba(255,255,255,0.12)');
+    gr.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
+    return new THREE.CanvasTexture(c);
+  }
+  const glowTex = makeGlowTexture();
+  function makeGlow(color, size, opacity) {
+    const m = new THREE.SpriteMaterial({ map: glowTex, color, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false });
+    const s = new THREE.Sprite(m); s.scale.set(size, size, 1); s.renderOrder = 5; return s;
+  }
+
+  /* ---------- Static scene: depth cues, orbit, path, markers, nucleus ---------- */
+  // A faint grid below the orbit plane and a sparse star field give the overhead
+  // perspective camera something to measure depth against.
+  const grid = new THREE.GridHelper(44, 44, 0x1a2744, 0x111b30);
+  grid.rotation.x = Math.PI / 2; grid.position.z = -1.4;
+  grid.material.transparent = true; grid.material.opacity = 0.55; scene.add(grid);
+
+  const starPos = new Float32Array(240 * 3);
+  for (let i = 0; i < 240; i++) { starPos[i * 3] = (Math.random() - 0.5) * 46; starPos[i * 3 + 1] = (Math.random() - 0.5) * 46; starPos[i * 3 + 2] = -2 - Math.random() * 4; }
+  const starGeo = new THREE.BufferGeometry(); starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+  scene.add(new THREE.Points(starGeo, new THREE.PointsMaterial({ size: 0.1, map: glowTex, color: 0x9db4e6, transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending })));
+
+  // Orbit: a fixed circle of radius R. Nothing ever changes its shape.
+  const orbitPts = [];
+  for (let i = 0; i < 256; i++) { const a = (i / 256) * TWO_PI; orbitPts.push(new THREE.Vector3(R * Math.cos(a), R * Math.sin(a), 0)); }
+  scene.add(new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(orbitPts), new THREE.LineBasicMaterial({ color: 0x5b6f9c, transparent: true, opacity: 0.8 })));
+
+  // Photon path (the secant), drawn faint and dashed.
+  const pathGeo = new THREE.BufferGeometry().setFromPoints([-11, 11].map((s) => new THREE.Vector3(NV.x * D_OFF + UV.x * s, NV.y * D_OFF + UV.y * s, 0)));
+  const pathLine = new THREE.Line(pathGeo, new THREE.LineDashedMaterial({ color: 0x7e93c4, dashSize: 0.14, gapSize: 0.12, transparent: true, opacity: 0.45 }));
+  pathLine.computeLineDistances(); scene.add(pathLine);
+
+  // Markers at the two crossings.
+  function marker(p) {
+    const g = new THREE.Group();
+    g.add(new THREE.Mesh(new THREE.RingGeometry(0.1, 0.14, 40), new THREE.MeshBasicMaterial({ color: 0xcfe0ff, transparent: true, opacity: 0.85, side: THREE.DoubleSide })));
+    g.add(new THREE.Mesh(new THREE.CircleGeometry(0.035, 16), new THREE.MeshBasicMaterial({ color: 0xcfe0ff })));
+    g.position.set(p.x, p.y, 0.01); scene.add(g);
+  }
+  marker(P1); marker(P2);
+
+  // Nucleus: small, bright, with its own light and glow.
+  const nucleus = new THREE.Mesh(new THREE.SphereGeometry(0.14, 32, 20), new THREE.MeshStandardMaterial({ color: 0xffe2b0, emissive: 0xffb86b, emissiveIntensity: 1.6 }));
+  scene.add(nucleus);
+  const nucGlow = makeGlow(0xffc27a, 1.5, 0.8); scene.add(nucGlow);
+
+  /* ---------- Electron ---------- */
+  const EMI_REST = new THREE.Color(0x2b4fc0), EMI_ENERGY = new THREE.Color(0xb86a12);
+  const COL_REST = new THREE.Color(0xa9c1ff), COL_ENERGY = new THREE.Color(0xffb04a);
+  const eMat = new THREE.MeshStandardMaterial({ color: 0xa9c1ff, emissive: 0x2b4fc0, emissiveIntensity: 0.9, roughness: 0.35, metalness: 0.1 });
+  const electron = new THREE.Mesh(new THREE.SphereGeometry(0.17, 32, 20), eMat); scene.add(electron);
+  const eGlow = makeGlow(0xa9c1ff, 1.0, 0.7); scene.add(eGlow);
+  const eShadow = makeGlow(0x2a3f7a, 0.9, 0.4); eShadow.renderOrder = 1; scene.add(eShadow); // sits on the grid below: a depth cue
+  const eRing = new THREE.Mesh(new THREE.RingGeometry(0.28, 0.32, 48), new THREE.MeshBasicMaterial({ color: 0xffb04a, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false }));
+  scene.add(eRing);
+
+  // The arc already travelled from P1, drawn as the electron revolves.
+  const ARC_N = 96;
+  const arcPts = [];
+  for (let i = 0; i < ARC_N; i++) { const a = PHI1 + DIR * ARC * (i / (ARC_N - 1)); arcPts.push(new THREE.Vector3(R * Math.cos(a), R * Math.sin(a), 0.01)); }
+  const arcGeo = new THREE.BufferGeometry().setFromPoints(arcPts);
+  const arcLine = new THREE.Line(arcGeo, new THREE.LineBasicMaterial({ color: 0xffb04a, transparent: true, opacity: 0.85 }));
+  arcLine.visible = false; scene.add(arcLine);
+
+  /* ---------- Photon wave packets ---------- */
+  // A packet is a sinusoid under a smooth envelope, drawn as two additive ribbons
+  // (a thin bright core and a wide soft halo) plus a glow sprite at its centre.
+  class Wave {
+    constructor(color) {
+      this.n = 120; this.color = new THREE.Color(color);
+      this.xs = new Float32Array(this.n); this.ys = new Float32Array(this.n); this.env = new Float32Array(this.n);
+      this.layers = [{ w: 0.06, k: 1.0 }, { w: 0.26, k: 0.14 }];
+      this.group = new THREE.Group(); this.group.visible = false;
+      this.center = new THREE.Vector3();
+      this.layers.forEach((l) => {
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(this.n * 6), 3));
+        geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(this.n * 6), 3));
+        const idx = [];
+        for (let i = 0; i < this.n - 1; i++) { const a = 2 * i, b = a + 1, c = a + 2, d = a + 3; idx.push(a, b, c, b, d, c); }
+        geo.setIndex(idx); l.geo = geo;
+        const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
+        mesh.frustumCulled = false; this.group.add(mesh);
+      });
+      this.glow = makeGlow(color, 2.0, 0.5); this.group.add(this.glow);
+      scene.add(this.group);
+    }
+    // Draw the packet between path coordinates sTail and sFront. `bright` scales intensity.
+    set(sTail, sFront, amp, bright) {
+      const len = sFront - sTail, n = this.n;
+      if (len < 1e-3 || bright < 0.01) { this.group.visible = false; return false; }
+      for (let i = 0; i < n; i++) {
+        const a = i / (n - 1), s = sTail + a * len;
+        const e = Math.pow(Math.sin(Math.PI * a), 1.3);
+        const y = amp * e * Math.sin(K * (s - sFront));           // transverse displacement
+        this.xs[i] = NV.x * (D_OFF + y) + UV.x * s;
+        this.ys[i] = NV.y * (D_OFF + y) + UV.y * s;
+        this.env[i] = e;
+      }
+      this.layers.forEach((l) => {
+        const pos = l.geo.attributes.position.array, col = l.geo.attributes.color.array;
+        for (let i = 0; i < n; i++) {
+          const i0 = Math.max(0, i - 1), i1 = Math.min(n - 1, i + 1);
+          let tx = this.xs[i1] - this.xs[i0], ty = this.ys[i1] - this.ys[i0];
+          const m = Math.hypot(tx, ty) || 1; tx /= m; ty /= m;
+          const hx = -ty * l.w / 2, hy = tx * l.w / 2, o = i * 6;
+          pos[o] = this.xs[i] + hx; pos[o + 1] = this.ys[i] + hy; pos[o + 2] = 0.02;
+          pos[o + 3] = this.xs[i] - hx; pos[o + 4] = this.ys[i] - hy; pos[o + 5] = 0.02;
+          const k = this.env[i] * bright * l.k;
+          col[o] = col[o + 3] = this.color.r * k; col[o + 1] = col[o + 4] = this.color.g * k; col[o + 2] = col[o + 5] = this.color.b * k;
+        }
+        l.geo.attributes.position.needsUpdate = true; l.geo.attributes.color.needsUpdate = true;
+      });
+      const sm = (sTail + sFront) / 2;
+      this.center.set(NV.x * D_OFF + UV.x * sm, NV.y * D_OFF + UV.y * sm, 0);
+      this.glow.position.set(this.center.x, this.center.y, 0.02);
+      const g = 1.2 + 0.8 * clamp(len / L, 0, 1);
+      this.glow.scale.set(g, g, 1); this.glow.material.opacity = Math.min(1, 0.55 * bright);
+      this.group.visible = true; return true;
+    }
+    hide() { this.group.visible = false; }
+  }
+  const photon = new Wave(0x58d2ff);   // the original photon (approach and collapse)
+  const ghost = new Wave(0x7fc4e6);    // the photon that was never absorbed
+  const newPhoton = new Wave(0x58d2ff);
+
+  /* ---------- Mid-pause highlights ---------- */
+  const hlGhost = new THREE.Mesh(new THREE.RingGeometry(0.62, 0.68, 56), new THREE.MeshBasicMaterial({ color: 0x58d2ff, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false }));
+  const hlElec = new THREE.Mesh(new THREE.RingGeometry(0.4, 0.45, 56), new THREE.MeshBasicMaterial({ color: 0xffb04a, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false }));
+  const connGeo = new THREE.BufferGeometry(); connGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
+  const conn = new THREE.Line(connGeo, new THREE.LineDashedMaterial({ color: 0xffffff, dashSize: 0.12, gapSize: 0.1, transparent: true, opacity: 0.7 }));
+  [hlGhost, hlElec, conn].forEach((o) => { o.visible = false; o.frustumCulled = false; scene.add(o); });
+
+  /* ---------- Expanding ring pulses (absorption and emission flashes) ---------- */
+  const pulses = [];
+  function spawnPulse(p, color, maxR, dur) {
+    const m = new THREE.Mesh(new THREE.RingGeometry(0.92, 1.0, 64), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
+    m.position.set(p.x, p.y, 0.03); m.scale.set(0.05, 0.05, 1); scene.add(m);
+    pulses.push({ m, t0: rt, dur, maxR });
+  }
+  function clearPulses() { pulses.forEach((p) => { scene.remove(p.m); p.m.geometry.dispose(); p.m.material.dispose(); }); pulses.length = 0; }
+
+  /* ---------- Simulation state ---------- */
+  const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const JITTER = reduceMotion ? 0.035 : 0.075;  // vibration amplitude of the energised electron
+  const EVENTS = [{ t: T_A, id: 'absorb' }, { t: T_MID, id: 'mid' }, { t: T_EMIT, id: 'emit' }];
+
+  let rt = performance.now() / 1000, lastRt = rt;   // real clock (drives effects, even while paused)
+  let t = 0;                    // simulation clock (frozen while paused)
+  let evi = 0;                  // index of the next automatic pause
+  let paused = false, pending = null, mode = 'continue';
+  let stage = 0, vib = 0, vibTarget = 0;
+  let collapseT0 = -1, ghostOn = false, ghostT0 = 0, ghostBr = 0.28, highlight = false, endShown = false;
+  let ex = 0, ey = 0, eAng = 0;  // electron position on the orbit (without jitter)
+
+  /* ---------- UI helpers ---------- */
+  function setStage(i) {
+    stageEls.forEach((li, j) => {
+      li.classList.toggle('on', j === i); li.classList.toggle('done', j < i);
+      if (j === i) li.setAttribute('aria-current', 'step'); else li.removeAttribute('aria-current');
+    });
+  }
+  const setStatus = (s) => { statusEl.textContent = s; };
+  function showCard(kicker, msg, label) {
+    kickerEl.textContent = kicker; msgEl.textContent = msg; btn.textContent = label;
+    card.hidden = false; card.classList.remove('in'); void card.offsetWidth; card.classList.add('in');
+    try { btn.focus({ preventScroll: true }); } catch (e) { /* focus is a convenience only */ }
+  }
+  function hideCard() { card.hidden = true; readout.hidden = true; }
+
+  /* ---------- The three automatic pauses ---------- */
+  function trigger(id) {
+    paused = true; pending = id; mode = 'continue';
+    if (id === 'absorb') {
+      stage = 1; setStage(1); setStatus('Absorbed at P1. The electron vibrates.');
+      collapseT0 = rt; vibTarget = 1;
+      spawnPulse(P1, 0xffd08a, 1.0, 0.9); spawnPulse(P1, 0x58d2ff, 0.6, 0.55);
+      readout.hidden = true;
+      showCard('Pause 1 of 3 · Absorption at P1', 'The photon has ceased to exist. Its energy has been absorbed by the electron.', 'Continue');
+    } else if (id === 'mid') {
+      highlight = true; setStatus('The electron lags behind the ghost photon.');
+      // Delay so far = time since P1 minus the time light needs to reach the electron's position along the chord.
+      const a = electronAngle(t), sE = (R * Math.cos(a) - P1.x) * UV.x + (R * Math.sin(a) - P1.y) * UV.y;
+      const delay = Math.max(0, (t - T_A) - sE / C);
+      barFill.style.width = clamp(delay / DELAY_FINAL * 100, 0, 100).toFixed(0) + '%';
+      rvalEl.textContent = '+' + delay.toFixed(2) + ' s so far, ' + DELAY_FINAL.toFixed(2) + ' s by P2';
+      readout.hidden = false;
+      showCard('Pause 2 of 3 · Halfway along the arc', 'The electron’s path is slower than light. Here a microscopic delay is observed, which results in an overall slowing of the light.', 'Continue');
+      readout.hidden = false;
+    } else {
+      stage = 3; setStage(3); setStatus('Re-emitted at P2 as a new photon.');
+      vibTarget = 0; spawnPulse(P2, 0x58d2ff, 1.0, 0.9); spawnPulse(P2, 0xffd08a, 0.6, 0.55);
+      readout.hidden = true;
+      showCard('Pause 3 of 3 · Re-emission at P2', 'The energy of the absorbed photon has been converted into a new photon.', 'Continue');
+    }
+  }
+
+  btn.addEventListener('click', () => {
+    if (mode === 'replay') { reset(); return; }
+    paused = false; hideCard();
+    if (pending === 'absorb') { stage = 2; setStage(2); setStatus('Electron revolves; light races ahead.'); ghostOn = true; ghostT0 = rt; }
+    else if (pending === 'mid') { highlight = false; setStatus('Electron revolves; light races ahead.'); }
+    else if (pending === 'emit') { setStatus('The new photon follows the ghost photon.'); }
+    pending = null;
+  });
+
+  function showEnd() {
+    endShown = true; mode = 'replay'; setStatus('The new photon trails the ghost photon.');
+    readout.hidden = true;
+    showCard('Sequence complete', 'The new photon arrives after the ghost photon would have. In this model, that lag is the slowing of light.', 'Replay');
+  }
+
+  function reset() {
+    t = 0; evi = 0; paused = false; pending = null; mode = 'continue'; stage = 0;
+    vib = 0; vibTarget = 0; collapseT0 = -1; ghostOn = false; highlight = false; endShown = false;
+    ghostBr = 0.28; clearPulses(); hideCard(); setStage(0); setStatus('Photon approaches the orbit.');
+    photon.hide(); ghost.hide(); newPhoton.hide();
+  }
+
+  /* ---------- Per-frame update ---------- */
+  function advance(dt) {
+    t += dt;
+    if (evi < EVENTS.length && t >= EVENTS[evi].t) { t = EVENTS[evi].t; trigger(EVENTS[evi].id); evi++; return; }
+    if (evi >= EVENTS.length && !endShown && newFront(t) > END_FRONT) showEnd();
+  }
+
+  const v3 = new THREE.Vector3(), tmpCol = new THREE.Color();
+  function placeTag(el, x, y, show) {
+    if (!show) { el.hidden = true; return; }
+    v3.set(x, y, 0).project(camera);
+    let px = (v3.x * 0.5 + 0.5) * viewW, py = (-v3.y * 0.5 + 0.5) * viewH;
+    if (px < -24 || px > viewW + 24 || py < -24 || py > viewH + 24) { el.hidden = true; return; }
+    el.hidden = false; px = clamp(px, 30, viewW - 30); py = clamp(py, 12, viewH - 12);
+    el.style.setProperty('--x', px.toFixed(1) + 'px'); el.style.setProperty('--y', py.toFixed(1) + 'px');
+  }
+
+  function update(dt) {
+    /* Electron: constant-speed circular motion plus a vibration offset while energised. */
+    vib += (vibTarget - vib) * Math.min(1, dt * 12);
+    eAng = electronAngle(t); ex = R * Math.cos(eAng); ey = R * Math.sin(eAng);
+    const j = vib * JITTER;
+    const jx = j * (Math.sin(rt * 63) + 0.5 * Math.sin(rt * 97 + 0.7));
+    const jy = j * (Math.cos(rt * 55) + 0.5 * Math.cos(rt * 89 + 2.1));
+    electron.position.set(ex + jx, ey + jy, 0);
+    eGlow.position.copy(electron.position); eGlow.position.z = 0.02;
+    eShadow.position.set(ex, ey, -1.4);
+    eMat.emissive.copy(EMI_REST).lerp(EMI_ENERGY, vib); eMat.emissiveIntensity = 0.9 + 0.8 * vib;
+    tmpCol.copy(COL_REST).lerp(COL_ENERGY, vib); eMat.color.copy(tmpCol); eGlow.material.color.copy(tmpCol);
+    eGlow.material.opacity = 0.7 + 0.2 * vib;
+    eRing.visible = vib > 0.05; eRing.position.set(ex + jx, ey + jy, 0.02);
+    const pulse = 1 + 0.25 * Math.sin(rt * 9); eRing.scale.set(pulse, pulse, 1);
+    eRing.material.opacity = 0.55 * vib * (0.6 + 0.4 * Math.sin(rt * 9 + 1));
+
+    /* Nucleus breathes very slightly. */
+    nucGlow.material.opacity = 0.75 + 0.08 * Math.sin(rt * 2.2);
+
+    /* Arc travelled since P1. */
+    if (t >= T_A) {
+      const frac = clamp((t - T_A) / T_ARC, 0, 1);
+      arcLine.visible = true; arcGeo.setDrawRange(0, Math.max(2, Math.ceil(frac * (ARC_N - 1)) + 1));
+    } else arcLine.visible = false;
+
+    /* Original photon: approaches, then collapses into the electron at P1. */
+    if (t < T_A) { const f = photonFront(t); photon.set(f - L, f, AMP, 1); }
+    else if (collapseT0 >= 0) {
+      const k = clamp((rt - collapseT0) / 0.6, 0, 1);
+      photon.set(P1S - L * (1 - k), P1S, AMP * (1 - k), 1 - 0.5 * k);
+    } else photon.hide();
+
+    /* Ghost photon: never absorbed, keeps travelling at the speed of light. */
+    if (ghostOn) {
+      const sg = photonFront(t);
+      ghostBr += ((highlight ? 1 : 0.28) - ghostBr) * Math.min(1, dt * 8);
+      if (sg - L > 14) ghost.hide(); else ghost.set(sg - L, sg, AMP * 0.95, ghostBr * clamp((rt - ghostT0) / 0.5, 0, 1));
+    } else ghost.hide();
+
+    /* New photon: grows out of the electron at P2, then travels along the secant. */
+    if (t >= T_EMIT) {
+      const f = newFront(t), tail = Math.max(f - L, P2S), len = f - tail;
+      if (tail > 14) newPhoton.hide(); else newPhoton.set(tail, f, AMP * Math.min(1, Math.sqrt(len / L)), 1);
+    } else newPhoton.hide();
+
+    /* Mid-pause highlight: ghost photon (ahead) and electron (behind). */
+    const hl = highlight && ghost.group.visible;
+    hlGhost.visible = hlElec.visible = conn.visible = hl;
+    if (hl) {
+      const s = 1 + 0.12 * Math.sin(rt * 7);
+      hlGhost.position.set(ghost.center.x, ghost.center.y, 0.03); hlGhost.scale.set(s, s, 1);
+      hlElec.position.set(ex, ey, 0.03); hlElec.scale.set(s, s, 1);
+      const p = connGeo.attributes.position.array;
+      p[0] = ghost.center.x; p[1] = ghost.center.y; p[2] = 0.03; p[3] = ex; p[4] = ey; p[5] = 0.03;
+      connGeo.attributes.position.needsUpdate = true; conn.computeLineDistances();
+    }
+
+    /* Expanding pulses. */
+    for (let i = pulses.length - 1; i >= 0; i--) {
+      const p = pulses[i], age = (rt - p.t0) / p.dur;
+      if (age >= 1) { scene.remove(p.m); p.m.geometry.dispose(); p.m.material.dispose(); pulses.splice(i, 1); continue; }
+      const r = 0.1 + age * p.maxR; p.m.scale.set(r, r, 1); p.m.material.opacity = 0.9 * Math.pow(1 - age, 2);
+    }
+
+    /* Labels follow their 3D anchors. */
+    placeTag(tags.nuc, 0, -0.5, true);
+    placeTag(tags.e, ex + Math.cos(eAng) * 0.55, ey + Math.sin(eAng) * 0.55, true);
+    tags.e.textContent = hl ? 'e⁻ · behind' : 'e⁻';
+    tags.gh.textContent = hl ? 'ghost photon · ahead' : 'ghost photon';
+    tags.gh.classList.toggle('hl', hl);
+    const useNew = newPhoton.group.visible, usePh = !useNew && photon.group.visible;
+    const phw = useNew ? newPhoton : photon;
+    tags.ph.textContent = useNew ? 'new photon' : 'photon';
+    placeTag(tags.ph, phw.center.x - NV.x * 0.6, phw.center.y - NV.y * 0.6, useNew || usePh);
+    placeTag(tags.gh, ghost.center.x - NV.x * 0.6, ghost.center.y - NV.y * 0.6, ghost.group.visible);
+    const rl = (p) => { const m = Math.hypot(p.x, p.y); return [p.x + p.x / m * 0.42, p.y + p.y / m * 0.42]; };
+    const a1 = rl(P1), a2 = rl(P2);
+    placeTag(tags.p1, a1[0], a1[1], true); placeTag(tags.p2, a2[0], a2[1], true);
+  }
+
+  function frame(now) {
+    rt = now / 1000;
+    const dt = Math.min(0.05, Math.max(0, rt - lastRt)); lastRt = rt;
+    if (!paused) advance(dt);
+    update(dt);
+    renderer.render(scene, camera);
+    requestAnimationFrame(frame);
+  }
+
+  /* ---------- Start: the simulation begins on its own ---------- */
+  window.addEventListener('resize', resize);
+  resize();
+  reset();
+  requestAnimationFrame(frame);
+})();
+</script>
+
+</body>
+</html>
